@@ -126,15 +126,9 @@ The `context` parameter provides access to:
     "previous-job-step": {
       // ... outputs from previous jobs in workflow
     }
-  },
-  partial_results: {
-    // ... saved progress for long-running jobs
-  },
-  current_step: "start"
+  }
 }
 ```
-
-**Note**: Job metadata (ID, tenant, attempt count) is not exposed to scripts for security reasons.
 
 ## Testing
 
