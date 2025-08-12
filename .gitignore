@@ -5,7 +5,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Build output
-dist/
+# dist/ - Distribution files need to be committed for job service
 
 # Test coverage
 coverage/
