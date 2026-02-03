@@ -1,183 +1,235 @@
-# SGNL Job Template
+# Active Directory Add User to Group Action
 
-This repository provides a template for creating JavaScript jobs for the SGNL's CAEP Hub.
+This action adds a user to a group in on-premise Active Directory using LDAP/LDAPS.
 
-## Quick Start
+## Overview
 
-1. **Use this template** to create a new repository
-2. **Clone** your new repository locally
-3. **Install dependencies**: `npm install`  
-4. **Modify** `src/script.mjs` with your job logic
-5. **Update** `metadata.yaml` with your job schema
-6. **Test locally**: `npm run dev`
-7. **Run tests**: `npm test`
-8. **Build**: `npm run build`
-9. **Release**: Create a git tag and push
+The AD Add User to Group action enables automated group membership management by adding users to Active Directory security groups or distribution groups via LDAP. It handles LDAP bind authentication, TLS configuration, and provides idempotent handling when a user is already a member of the target group.
+
+## Prerequisites
+
+- On-premise Active Directory domain controller accessible via LDAP or LDAPS
+- A service account with permissions to modify group membership
+  - Typically requires **Write** permission on the `member` attribute of target groups
+- Network connectivity from the execution environment to the LDAP server
+
+## Configuration
+
+### Authentication
+
+This action uses LDAP Simple Bind authentication with a service account.
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `BASIC_USERNAME` | Secret | Yes | Bind DN of the service account (e.g., `CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com`) |
+| `BASIC_PASSWORD` | Secret | Yes | Password for the service account |
+
+### Environment Variables
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `ADDRESS` | Yes | LDAP server URL | `ldaps://ad.corp.example.com:636` |
+| `TLS_SKIP_VERIFY` | No | Set to `true` to skip TLS certificate verification | `true` |
+
+### Input Parameters
+
+| Parameter | Type | Required | Description | Example |
+|-----------|------|----------|-------------|---------|
+| `userDN` | string | Yes | Distinguished Name of the user to add | `CN=John Doe,OU=Users,DC=corp,DC=example,DC=com` |
+| `groupDN` | string | Yes | Distinguished Name of the target group | `CN=Admins,OU=Groups,DC=corp,DC=example,DC=com` |
+| `address` | string | No | Optional LDAP server URL override | `ldaps://ad.corp.example.com:636` |
+
+### Output Structure
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Operation result (success, failed, etc.) |
+| `userDN` | string | Distinguished Name of the user that was processed |
+| `groupDN` | string | Distinguished Name of the group that was processed |
+| `added` | boolean | Whether the user was newly added to the group |
+| `address` | string | The LDAP server URL that was used |
+| `message` | string | Optional message providing additional context (e.g., when user is already a member) |
+
+## Usage Examples
+
+### Basic Usage
+
+```json
+{
+  "userDN": "CN=John Doe,OU=Users,DC=corp,DC=example,DC=com",
+  "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com"
+}
+```
+
+### Job Specification
+
+```json
+{
+  "id": "add-user-to-hr-group",
+  "type": "nodejs-22",
+  "script": {
+    "repository": "github.com/sgnl-actions/ad-add-to-group",
+    "version": "v1.0.0",
+    "type": "nodejs"
+  },
+  "script_inputs": {
+    "userDN": "CN=New Employee,OU=Users,DC=corp,DC=example,DC=com",
+    "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com"
+  },
+  "environment": {
+    "ADDRESS": "ldaps://ad.corp.example.com:636"
+  },
+  "secrets": {
+    "BASIC_USERNAME": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
+    "BASIC_PASSWORD": "your-service-account-password"
+  }
+}
+```
+
+### With TLS Skip Verify
+
+For environments with self-signed certificates:
+
+```json
+{
+  "id": "add-user-to-hr-group",
+  "type": "nodejs-22",
+  "script": {
+    "repository": "github.com/sgnl-actions/ad-add-to-group",
+    "version": "v1.0.0",
+    "type": "nodejs"
+  },
+  "script_inputs": {
+    "userDN": "CN=New Employee,OU=Users,DC=corp,DC=example,DC=com",
+    "groupDN": "CN=HR Group,OU=Groups,DC=corp,DC=example,DC=com"
+  },
+  "environment": {
+    "ADDRESS": "ldaps://ad.corp.example.com:636",
+    "TLS_SKIP_VERIFY": "true"
+  },
+  "secrets": {
+    "BASIC_USERNAME": "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com",
+    "BASIC_PASSWORD": "your-service-account-password"
+  }
+}
+```
+
+## API Details
+
+This action uses the LDAP modify operation to add a user DN to the `member` attribute of the target group:
+
+```
+MODIFY groupDN
+  ADD member: userDN
+```
+
+The connection lifecycle is stateless: each invocation binds to the LDAP server, performs the modify operation, and unbinds in a `finally` block.
+
+## Error Handling
+
+### Success Scenarios
+
+- **Modify succeeds**: User successfully added to group (`added: true`)
+- **LDAP error code 68** (`ENTRY_ALREADY_EXISTS`): User is already a member, treated as success (`added: false`)
+
+### Retryable Errors
+
+The framework automatically retries on transient errors such as:
+- Network connectivity issues
+- LDAP server temporarily unavailable
+- Connection timeouts
+
+### Fatal Errors
+
+The following errors will not be retried:
+- **Invalid credentials**: Incorrect bind DN or password
+- **Insufficient access rights**: Service account lacks permission to modify the group
+- **No such object** (LDAP code 32): The user DN or group DN does not exist
+- **Invalid DN syntax**: Malformed Distinguished Name
+
+## Security Considerations
+
+- **Authentication**: Uses LDAP Simple Bind with a dedicated service account
+- **Transport Security**: Supports LDAPS (LDAP over TLS) for encrypted connections
+- **TLS Verification**: Certificate verification is enabled by default; `TLS_SKIP_VERIFY` should only be used in development or with self-signed certificates
+- **Credential Security**: Bind credentials are provided via secrets and are never logged
+- **Connection Lifecycle**: Connections are unbound in a `finally` block to prevent resource leaks
 
 ## Development
 
 ### Local Testing
 
 ```bash
-# Run the script locally with mock data
+# Run with mock parameters
 npm run dev
 
 # Run unit tests
 npm test
 
-# Watch mode for development
-npm run test:watch
-npm run build:watch
+# Check test coverage
+npm run test:coverage
+```
+
+### Building
+
+```bash
+# Build distribution bundle
+npm run build
 
 # Validate metadata
 npm run validate
 
 # Lint code
 npm run lint
-npm run lint:fix
 ```
 
-### File Structure
+## Troubleshooting
 
-- `src/script.mjs` - Main job implementation (⚠️ **Edit this!**)
-- `metadata.yaml` - Job schema and configuration (⚠️ **Edit this!**)
-- `tests/script.test.js` - Unit tests
-- `dist/index.js` - Built script (generated by `npm run build`)
-- `scripts/` - Development utilities
+### Common Issues
 
-## Implementation Checklist
+1. **"Missing LDAP bind credentials"**
+   - Ensure `BASIC_USERNAME` and `BASIC_PASSWORD` are set in secrets
+   - Verify the bind DN is a valid Distinguished Name
 
-### Required Changes
+2. **"No URL specified"**
+   - Ensure the `ADDRESS` environment variable is set or `address` is provided in params
+   - Verify the URL format (e.g., `ldaps://ad.corp.example.com:636`)
 
-- [ ] **Update job name** and description in `metadata.yaml`
-- [ ] **Define input parameters** in `metadata.yaml` 
-- [ ] **Define output schema** in `metadata.yaml`
-- [ ] **Implement `invoke` handler** in `src/script.mjs`
-- [ ] **Update test mock data** in `tests/script.test.js`
-- [ ] **Update README** with job-specific documentation
+3. **"Invalid credentials"**
+   - Verify the service account DN and password are correct
+   - Check that the account is not locked or expired in Active Directory
 
-### Optional Enhancements
+4. **"Insufficient access rights"**
+   - Verify the service account has Write permission on the `member` attribute of the target group
+   - Check if there are any deny ACEs blocking the operation
 
-- [ ] Implement `error` handler for error recovery
-- [ ] Implement `halt` handler for graceful shutdown
-- [ ] Add additional test cases
-- [ ] Customize development runner in `scripts/dev-runner.js`
+5. **"No such object" (LDAP code 32)**
+   - Verify the user DN exists in Active Directory
+   - Verify the group DN exists in Active Directory
+   - Check for typos in the Distinguished Names
 
-## Event Handlers
+6. **TLS/SSL connection errors**
+   - Verify the LDAP server is accessible on the configured port
+   - For LDAPS, ensure the server certificate is trusted or set `TLS_SKIP_VERIFY=true` for testing
+   - Check that the correct port is used (389 for LDAP, 636 for LDAPS)
 
-Your script must export a default object with these handlers:
+### Testing Group Membership
 
-### `invoke` (Required)
-Main execution logic for your job.
+To verify the action worked correctly, you can check group membership using:
 
-```javascript
-invoke: async (params, context) => {
-  // Your job logic here
-  return {
-    status: 'success',
-    // ... other outputs
-  };
-}
-```
+```bash
+# Using ldapsearch
+ldapsearch -H ldaps://ad.corp.example.com:636 \
+  -D "CN=svc-sgnl,OU=Service Accounts,DC=corp,DC=example,DC=com" \
+  -W -b "CN=Target Group,OU=Groups,DC=corp,DC=example,DC=com" \
+  "(objectClass=group)" member
 
-### `error` (Optional)
-Error recovery logic when `invoke` fails.
-
-```javascript
-error: async (params, context) => {
-  // params.error contains the original error
-  // Attempt recovery or cleanup
-  return {
-    status: 'recovered',
-    // ... recovery results
-  };
-}
-```
-
-### `halt` (Optional)  
-Graceful shutdown when job is cancelled or times out.
-
-```javascript
-halt: async (params, context) => {
-  // params.reason contains halt reason
-  // Clean up resources, save partial progress
-  return {
-    status: 'halted',
-    cleanup_completed: true
-  };
-}
-```
-
-## Context Object
-
-The `context` parameter provides access to:
-
-```javascript
-{
-  env: {
-    ENVIRONMENT: "production",
-    // ... other environment variables
-  },
-  secrets: {
-    API_KEY: "secret-key",
-    // ... other secrets
-  },
-  outputs: {
-    "previous-job-step": {
-      // ... outputs from previous jobs in workflow
-    }
-  }
-}
-```
-
-## Testing
-
-### Unit Tests
-
-Tests are in `tests/script.test.js`. Update the mock data to match your job's inputs:
-
-```javascript
-const params = {
-  target: 'your-target',
-  action: 'your-action'
-  // ... other inputs
-};
-```
-
-### Local Development
-
-Use `npm run dev` to test your script locally with mock data. Update `scripts/dev-runner.js` to customize the test parameters.
-
-## Deployment
-
-1. **Ensure tests pass**: `npm test`
-2. **Validate metadata**: `npm run validate`  
-3. **Build distribution**: `npm run build`
-4. **Create git tag**: `git tag v1.0.0`
-5. **Push to GitHub**: `git push origin v1.0.0`
-
-## Usage in SGNL
-
-Reference your job in a JobSpec:
-
-```json
-{
-  "id": "my-job-123",
-  "type": "nodejs-20",
-  "script": {
-    "repository": "github.com/your-org/your-job-repo",
-    "version": "v1.0.0",
-    "type": "nodejs"
-  },
-  "script_inputs": {
-    "target": "user@example.com",
-    "action": "create"
-  },
-  "environment": {
-    "ENVIRONMENT": "production"
-  }
-}
+# Using PowerShell
+Get-ADGroupMember -Identity "Target Group" | Where-Object { $_.Name -eq "John Doe" }
 ```
 
 ## Support
 
+- [ldapts Documentation](https://github.com/ldapts/ldapts)
+- [Active Directory LDAP Reference](https://docs.microsoft.com/en-us/windows/win32/ad/active-directory-domain-services)
+- [SGNL Actions Documentation](https://github.com/sgnl-actions)

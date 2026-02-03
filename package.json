@@ -1,7 +1,7 @@
 {
-  "name": "@sgnl/job-template",
+  "name": "@sgnl-actions/ad-add-to-group",
   "version": "1.0.0",
-  "description": "Template for SGNL JavaScript jobs",
+  "description": "Add a user to a group in on-premise Active Directory",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -17,13 +17,20 @@
   },
   "keywords": [
     "sgnl",
-    "job",
-    "template",
+    "active-directory",
+    "ad",
+    "ldap",
+    "group",
+    "user",
     "identity",
     "security"
   ],
   "author": "SGNL Engineering",
   "license": "MIT",
+  "dependencies": {
+    "ldapts": "^7.3.0",
+    "@sgnl-actions/utils": "github:sgnl-actions/utils#v1.0.5"
+  },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@rollup/plugin-commonjs": "^28.0.1",
