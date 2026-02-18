@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/sgnl-actions/schemas/main/metadata.schema.json
 name: ad-enable-user
 description: Enable a disabled user account in on-premise Active Directory via LDAP
 
